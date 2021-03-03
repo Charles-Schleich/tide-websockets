@@ -3,13 +3,13 @@ use std::marker::{PhantomData, Send};
 
 use crate::async_tungstenite::WebSocketStream;
 use crate::tungstenite::protocol::Role;
-use crate::WebSocketConnection;
+// use crate::WebSocketConnection;
 
 use async_dup::Arc;
 use async_std::task;
 use sha1::{Digest, Sha1};
 
-use tide::http::format_err;
+use tide::http::{format_err, upgrade::Connection};
 use tide::http::headers::{HeaderName, CONNECTION, UPGRADE};
 use tide::{Middleware, Request, Response, Result, StatusCode};
 
@@ -94,6 +94,8 @@ const WEBSOCKET_GUID: &str = "258EAFA5-E914-47DA-95CA-C5AB0DC85B11";
 /// }
 /// ```
 ///
+
+
 #[derive(Debug)]
 pub struct WebSocket<S, H> {
     handler: Arc<H>,
@@ -120,7 +122,7 @@ fn header_contains_ignore_case<T>(req: &Request<T>, header_name: HeaderName, val
 impl<S, H, Fut> WebSocket<S, H>
 where
     S: Send + Sync + Clone + 'static,
-    H: Fn(Request<S>, WebSocketConnection) -> Fut + Sync + Send + 'static,
+    H: Fn(Request<S>, WebSocketStream<Connection>) -> Fut + Sync + Send + 'static,
     Fut: Future<Output = Result<()>> + Send + 'static,
 {
     /// Build a new WebSocket with a handler function that
@@ -183,7 +185,7 @@ where
         task::spawn(async move {
             if let Some(stream) = upgrade_receiver.await {
                 let stream = WebSocketStream::from_raw_socket(stream, Role::Server, None).await;
-                handler(req, stream.into()).await
+                handler(req, stream).await
             } else {
                 Err(format_err!("never received an upgrade!"))
             }
@@ -196,7 +198,7 @@ where
 #[tide::utils::async_trait]
 impl<H, S, Fut> tide::Endpoint<S> for WebSocket<S, H>
 where
-    H: Fn(Request<S>, WebSocketConnection) -> Fut + Sync + Send + 'static,
+    H: Fn(Request<S>, WebSocketStream<Connection>) -> Fut + Sync + Send + 'static,
     Fut: Future<Output = Result<()>> + Send + 'static,
     S: Send + Sync + Clone + 'static,
 {
@@ -211,7 +213,7 @@ where
 #[tide::utils::async_trait]
 impl<H, S, Fut> Middleware<S> for WebSocket<S, H>
 where
-    H: Fn(Request<S>, WebSocketConnection) -> Fut + Sync + Send + 'static,
+    H: Fn(Request<S>, WebSocketStream<Connection>) -> Fut + Sync + Send + 'static,
     Fut: Future<Output = Result<()>> + Send + 'static,
     S: Send + Sync + Clone + 'static,
 {
